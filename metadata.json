@@ -1,0 +1,8 @@
+{
+  "name": "Remix Receitas cópia ",
+  "description": "Studio para criação de cenas cinematográficas em imagens e produção de vídeos longos contínuos via Agnes AI API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
