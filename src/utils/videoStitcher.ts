@@ -502,36 +502,17 @@ export async function stitchLongVideo(
           drawMediaCover(ctx, media.image, width, height, zoomFactor);
         }
 
-        // Crossfade transition to next shot
-        if (f >= mainFrames && transitionFrames > 0 && nextMedia) {
-          if (f === mainFrames && nextMedia.hasVideo && nextMedia.video) {
-            try {
-              nextMedia.video.currentTime = 0;
-              nextMedia.video.play().catch(() => {});
-            } catch (e) {}
-          }
-
-          const transProgress = (f - mainFrames) / transitionFrames;
-          ctx.save();
-          ctx.globalAlpha = Math.min(1, Math.max(0, transProgress));
-          if (nextMedia.hasVideo && nextMedia.video && nextMedia.video.videoWidth > 0) {
-            drawMediaCover(ctx, nextMedia.video, width, height, 1.0);
-          } else if (nextMedia.image && nextMedia.image.naturalWidth > 0) {
-            drawMediaCover(ctx, nextMedia.image, width, height, 1.0);
-          }
-          ctx.restore();
-        }
-
+        // Fast dynamic cut with no slow crossfade "sofa" blending - exact TikTok/Shorts hard cut pacing
         // Modern Social Media / Recipe Overlay Banner
-        const gradHeight = Math.min(150, height * 0.18);
+        const gradHeight = Math.min(130, height * 0.16);
         const grad = ctx.createLinearGradient(0, height - gradHeight, 0, height);
         grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-        grad.addColorStop(0.35, 'rgba(0, 0, 0, 0.55)');
-        grad.addColorStop(1, 'rgba(0, 0, 0, 0.9)');
+        grad.addColorStop(0.4, 'rgba(0, 0, 0, 0.55)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0.88)');
         ctx.fillStyle = grad;
         ctx.fillRect(0, height - gradHeight, width, gradHeight);
 
-        // Badge: e.g. "PASSO 1 DE 3"
+        // Badge: e.g. "PASSO 1 DE 5"
         const isRecipe = (shot as any).stepNumber !== undefined;
         const badgeText = isRecipe
           ? `PASSO ${(shot as any).stepNumber || shotIdx + 1} DE ${totalShots}`
@@ -539,7 +520,7 @@ export async function stitchLongVideo(
 
         ctx.fillStyle = '#f59e0b';
         ctx.font = 'bold 12px "Plus Jakarta Sans", sans-serif';
-        ctx.fillText(badgeText, 24, height - 52);
+        ctx.fillText(badgeText, 24, height - 48);
 
         // Title text
         const displayTitle = (
@@ -548,27 +529,27 @@ export async function stitchLongVideo(
           `Tomada ${shotIdx + 1}`
         ).trim();
         ctx.fillStyle = '#ffffff';
-        ctx.font = '600 15px "Plus Jakarta Sans", sans-serif';
+        ctx.font = '700 15px "Plus Jakarta Sans", sans-serif';
         const maxTitleWidth = width - 48;
         let safeTitle = displayTitle;
         while (ctx.measureText(safeTitle).width > maxTitleWidth && safeTitle.length > 5) {
           safeTitle = safeTitle.slice(0, -4) + '...';
         }
-        ctx.fillText(safeTitle, 24, height - 30);
+        ctx.fillText(safeTitle, 24, height - 28);
 
         // Subtitle or Voiceover preview
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '11px "JetBrains Mono", monospace';
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '500 11px "JetBrains Mono", monospace';
         const timeStr = `${String(Math.floor(overallFrameCount / (fps * 60))).padStart(2, '0')}:${String(Math.floor((overallFrameCount / fps) % 60)).padStart(2, '0')}.${String(Math.floor((overallFrameCount % fps) * (100 / fps))).padStart(2, '0')}`;
         const rawSub =
           (shot as any).voiceoverText ||
           `TC ${timeStr} · ${(shot.shotType || 'shot').replace(/_/g, ' ').toUpperCase()}`;
         let safeSub = rawSub.trim();
         if (safeSub.length > 60) safeSub = safeSub.slice(0, 58) + '...';
-        ctx.fillText(safeSub, 24, height - 12);
+        ctx.fillText(safeSub, 24, height - 10);
 
-        // Wait for next frame
-        await new Promise((r) => setTimeout(r, 1000 / fps));
+        // Accurate frame delay keeping exact 30fps without clock drift
+        await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
       }
 
       // Pause current video after shot finishes

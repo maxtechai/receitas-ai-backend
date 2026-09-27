@@ -46,6 +46,8 @@ import {
 import {
   initialRecipeProject,
   pastaShrimpRecipeProject,
+  croquetesAirFryerRecipeProject,
+  paoQueijoAirFryerRecipeProject,
   escondidinhoAirfryerRecipeProject,
   sampleRecipeProjects,
 } from '../data/sampleRecipes';
@@ -179,60 +181,101 @@ export function extractVideoLastFrame(videoUrl?: string, fallbackImageUrl?: stri
 
   return new Promise((resolve) => {
     let resolved = false;
-    const finish = (result: string) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timeout);
-      video.src = '';
-      resolve(result || fallbackImageUrl || '');
-    };
+    let attempts = 0;
 
     const video = document.createElement('video');
     video.crossOrigin = 'anonymous';
+    // Use proxy for remote URLs to avoid CORS taint on canvas
     const proxyUrl = videoUrl.startsWith('http')
       ? `/api/proxy-media?url=${encodeURIComponent(videoUrl)}`
       : videoUrl;
-    video.src = proxyUrl;
-    video.muted = true;
-    video.playsInline = true;
-    video.preload = 'auto';
 
-    // 4.5s safety timeout - will fallback to image, NEVER mp4
-    const timeout = setTimeout(() => {
+    const finish = (result: string) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(safetyTimeout);
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      resolve(result || fallbackImageUrl || '');
+    };
+
+    // 8s safety timeout - will fallback to image if network stalls
+    const safetyTimeout = setTimeout(() => {
       finish(fallbackImageUrl || '');
-    }, 4500);
+    }, 8000);
 
-    video.onloadeddata = () => {
+    const captureFrame = () => {
       try {
-        video.currentTime = Math.max(0, (video.duration || 5) - 0.08);
+        const vW = video.videoWidth || 720;
+        const vH = video.videoHeight || 1280;
+        if (vW > 0 && vH > 0) {
+          const canvas = document.createElement('canvas');
+          canvas.width = vW;
+          canvas.height = vH;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, vW, vH);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
+            if (dataUrl && dataUrl.length > 500 && dataUrl.startsWith('data:image/')) {
+              finish(dataUrl);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Canvas capture error on video last frame:', err);
+      }
+
+      if (attempts < 2) {
+        attempts++;
+        try {
+          const dur = isFinite(video.duration) && video.duration > 0 ? video.duration : 3.0;
+          video.currentTime = Math.max(0.01, dur - 0.15 * attempts);
+          return;
+        } catch (_) {}
+      }
+
+      finish(fallbackImageUrl || '');
+    };
+
+    const doSeekToLastFrame = () => {
+      try {
+        const dur = isFinite(video.duration) && video.duration > 0 ? video.duration : 3.0;
+        // Seek precisely to the final valid frame (duration - 0.05 seconds)
+        const targetTime = Math.max(0.01, dur - 0.05);
+        if (Math.abs(video.currentTime - targetTime) < 0.02) {
+          captureFrame();
+        } else {
+          video.currentTime = targetTime;
+        }
       } catch (_) {
         finish(fallbackImageUrl || '');
       }
     };
 
-    video.onseeked = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 720;
-        canvas.height = video.videoHeight || 1280;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-          if (dataUrl && dataUrl.startsWith('data:image/')) {
-            finish(dataUrl);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('Canvas capture error:', err);
+    video.onloadedmetadata = () => {
+      doSeekToLastFrame();
+    };
+
+    video.oncanplay = () => {
+      if (video.currentTime === 0) {
+        doSeekToLastFrame();
       }
-      finish(fallbackImageUrl || '');
+    };
+
+    video.onseeked = () => {
+      captureFrame();
     };
 
     video.onerror = () => {
       finish(fallbackImageUrl || '');
     };
+
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.src = proxyUrl;
   });
 }
 
@@ -335,7 +378,7 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [recipeChatStepCount, setRecipeChatStepCount] = useState<number>(5);
+  const [recipeChatStepCount, setRecipeChatStepCount] = useState<number>(8);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -1389,6 +1432,88 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
           </div>
         </div>
 
+        {/* Presets Rápidos com Suporte a SynthID & Last-Frame Chain */}
+        <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto text-[11px] pb-1">
+          <span className="text-slate-400 font-bold shrink-0 flex items-center gap-1">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Presets Demonstrativos:</span>
+          </span>
+
+          <button
+            type="button"
+            onClick={() => {
+              onUpdateRecipe(croquetesAirFryerRecipeProject);
+              setCurrentStepIdx(0);
+              setStepTimer(0);
+              setIsPlaying(false);
+              showToast('🍗 Preset Mestre "Croquetes de Frango na Air Fryer (8 Passos / Last-Frame Perfeito)" carregado!', 'success');
+            }}
+            className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              recipe.id === 'recipe_croquetes_airfryer_8steps'
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                : 'bg-slate-900 border-slate-800 text-amber-300 hover:border-amber-500/80'
+            }`}
+          >
+            <span>🍗 Croquetes Air Fryer (8 Passos Mestre / Last-Frame)</span>
+            <span className="px-1.5 py-0.2 bg-amber-950/80 text-[10px] text-amber-300 rounded border border-amber-600/40">20s</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onUpdateRecipe(paoQueijoAirFryerRecipeProject);
+              setCurrentStepIdx(0);
+              setStepTimer(0);
+              setIsPlaying(false);
+              showToast('🧀 Preset "Pão de Queijo na Air Fryer (13s Viral / 7 Cenas)" carregado!', 'success');
+            }}
+            className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              recipe.id === 'recipe_pao_queijo_airfryer_7scenes'
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                : 'bg-slate-900 border-slate-800 text-amber-300 hover:border-amber-600/60'
+            }`}
+          >
+            <span>🧀 Pão de Queijo Air Fryer (13s / 7 Cenas SynthID)</span>
+            <span className="px-1.5 py-0.2 bg-amber-950/80 text-[10px] text-amber-300 rounded border border-amber-600/40">13s</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onUpdateRecipe(pastaShrimpRecipeProject);
+              setCurrentStepIdx(0);
+              setStepTimer(0);
+              setIsPlaying(false);
+              showToast('🍝 Preset "Macarrão com Alho e Camarão (5 Postos)" carregado!', 'success');
+            }}
+            className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              recipe.id === 'recipe_pasta_shrimp_multi_utensil_01'
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+            }`}
+          >
+            <span>🍝 Macarrão c/ Camarão (5 Postos)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onUpdateRecipe(escondidinhoAirfryerRecipeProject);
+              setCurrentStepIdx(0);
+              setStepTimer(0);
+              setIsPlaying(false);
+              showToast('🥔 Preset "Escondidinho na Air Fryer" carregado!', 'success');
+            }}
+            className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              recipe.id === 'recipe_escondidinho_airfryer_01'
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+            }`}
+          >
+            <span>🥔 Escondidinho Air Fryer</span>
+          </button>
+        </div>
+
         {/* Visual Pipeline Flowchart: Multi-Utensil Station Progression */}
         <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto text-[11px] font-mono text-slate-400 pb-1">
           <span className="text-amber-400 font-bold shrink-0">Progressão de Postos:</span>
@@ -2354,21 +2479,26 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
           <div className="flex flex-wrap items-center gap-2.5 p-3 rounded-xl bg-slate-900/80 border border-slate-800">
             <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Estrutura do Roteiro para Redes Sociais:</span>
+              <span>Quantidade de Passos / Tomadas Dinâmicas:</span>
             </span>
             <div className="flex items-center gap-1.5 flex-wrap">
-              {[3, 4, 5, 6].map((count) => (
+              {[
+                { count: 5, label: '5 Passos (Reels Clássico)' },
+                { count: 7, label: '7 Passos (Dinâmico)' },
+                { count: 8, label: '8 Passos (Mestre ⭐ Ultra-Fluido)' },
+                { count: 10, label: '10 Passos (Cortes Rápidos)' },
+              ].map((item) => (
                 <button
-                  key={count}
+                  key={item.count}
                   type="button"
-                  onClick={() => setRecipeChatStepCount(count)}
-                  className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                    recipeChatStepCount === count
-                      ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
+                  onClick={() => setRecipeChatStepCount(item.count)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                    recipeChatStepCount === item.count
+                      ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold ring-1 ring-amber-300'
                       : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
-                  {count} Passos {count === 5 ? '(Reels ⭐)' : count === 6 ? '(TikTok Master)' : ''}
+                  {item.label}
                 </button>
               ))}
             </div>
@@ -2408,33 +2538,87 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                 >
                   <div className="whitespace-pre-wrap">{msg.text}</div>
 
-                  {/* Render Recipe Proposal Card */}
+                  {/* Render Recipe Proposal Card with Rich Manual Step Details */}
                   {msg.recipeProposal && (
-                    <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-amber-300 text-xs">{msg.recipeProposal.title}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {msg.recipeProposal.steps.length} Passos · {msg.recipeProposal.prepTime}
+                    <div className="mt-3 pt-3 border-t border-slate-800 space-y-3 bg-slate-950/70 p-3.5 rounded-xl border border-amber-500/30">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="font-bold text-amber-300 text-sm block">
+                            {msg.recipeProposal.title}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {msg.recipeProposal.category} · {msg.recipeProposal.prepTime}
+                          </span>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/40">
+                          {msg.recipeProposal.steps.length} Tomadas Rápidas
                         </span>
                       </div>
 
-                      <div className="space-y-1 text-[11px] text-slate-300">
-                        {msg.recipeProposal.steps.map((st: any, i: number) => (
-                          <div key={i} className="flex items-start gap-1.5">
-                            <span className="font-mono text-amber-400 font-bold shrink-0">P{i + 1}:</span>
-                            <span>{st.actionTitle}</span>
-                          </div>
-                        ))}
+                      {/* Detailed Manual Step Preview List */}
+                      <div className="space-y-2 pt-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block font-mono">
+                          Decupagem Técnica de Passos (Roteiro Completo):
+                        </span>
+                        <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                          {msg.recipeProposal.steps.map((st: any, i: number) => (
+                            <div
+                              key={i}
+                              className="p-2 rounded-lg bg-slate-900 border border-slate-800/80 text-[11px] space-y-1"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-white flex items-center gap-1.5">
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono text-[10px]">
+                                    Passo {i + 1}
+                                  </span>
+                                  <span>{st.actionTitle}</span>
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  {st.durationSeconds || 3}s · {st.sfx ? `SFX: ${st.sfx}` : 'SFX: stir'}
+                                </span>
+                              </div>
+                              <p className="text-slate-300 text-[10px] leading-tight">
+                                {st.instruction || st.actionTitle}
+                              </p>
+                              {st.voiceoverText && (
+                                <p className="text-amber-200/80 text-[10px] italic">
+                                  🗣️ "{st.voiceoverText}"
+                                </p>
+                              )}
+                              {st.utensil && (
+                                <div className="text-[9px] text-slate-400 font-mono flex items-center gap-1">
+                                  <span>📍 Utensílio:</span>
+                                  <span className="text-slate-300">{st.utensil}</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleApplyRecipeProposal(msg.recipeProposal)}
-                        className="w-full mt-2 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md"
-                      >
-                        <Wand2 className="w-3.5 h-3.5" />
-                        <span>Aplicar Esta Receita ao Estúdio Culinário</span>
-                      </button>
+                      {/* Action Buttons: Configure Manual Steps vs AutoPilot */}
+                      <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleApplyRecipeProposal(msg.recipeProposal)}
+                          className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                          <Wand2 className="w-3.5 h-3.5" />
+                          <span>Configurar Manualmente no Estúdio</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleApplyRecipeProposal(msg.recipeProposal);
+                            setIsAutoPilotModalOpen(true);
+                          }}
+                          className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-orange-500 via-amber-400 to-amber-300 hover:brightness-110 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                          <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                          <span>Executar no Piloto Automático</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2479,9 +2663,9 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
       {/* SUB-TAB 3: MASTER RECIPE CONTINUOUS PLAYER */}
       {activeSubTab === 'player' && (
         <div className="space-y-6">
-          <div className="bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col justify-between">
-            {/* Viewport Screen */}
-            <div className="relative aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden">
+          <div className="bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col justify-between max-w-xl mx-auto">
+            {/* Viewport Screen with true 9:16 vertical ratio */}
+            <div className="relative aspect-[9/16] w-full max-h-[70vh] bg-slate-950 flex items-center justify-center overflow-hidden mx-auto">
               {currentStep?.videoUrl ? (
                 <video
                   key={currentStep?.id || currentStepIdx}
@@ -2504,13 +2688,13 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                     src={currentStep.imageUrl}
                     alt={currentStep.actionTitle}
                     referrerPolicy="no-referrer"
-                    className={`w-full h-full object-cover transition-transform duration-[6000ms] ease-out ${
-                      isPlaying ? 'scale-110' : 'scale-100'
+                    className={`w-full h-full object-cover transition-transform duration-[4000ms] ease-out ${
+                      isPlaying ? 'scale-105' : 'scale-100'
                     }`}
                   />
                   <div className="absolute top-14 left-4 px-2.5 py-1 rounded-md bg-black/80 backdrop-blur-md border border-amber-500/40 text-[10px] text-amber-300 font-mono flex items-center gap-1.5 shadow-lg pointer-events-none">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                    <span>Passo com Foto Base (Ação de vídeo ainda não animada)</span>
+                    <span>Passo com Foto Base</span>
                   </div>
                 </div>
               ) : (

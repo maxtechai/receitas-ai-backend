@@ -241,11 +241,13 @@ app.post('/api/recipe/generate', async (req, res) => {
       fixedAnchors?.styleAnchor ||
       'Fotografia gastronômica comercial para Reels/TikTok, apetitosa em altíssima definição 8k';
 
+    const targetSteps = typeof stepCount === 'number' && stepCount >= 3 ? stepCount : 8;
+
     // 1. Try server-side Gemini 3.8 Flash with structured JSON schema
     if (ai) {
       try {
         const geminiPrompt = `Você é um diretor de produção audiovisual e criador de conteúdo gastronômico viral para Reels, TikTok e YouTube Shorts.
-Crie um roteiro culinário contínuo e profissional em exatamente ${stepCount} passos sequenciais utilizando a técnica de Last-Frame Continuity.
+Crie um roteiro culinário contínuo, ágil e altamente profissional com EXATAMENTE ${targetSteps} PASSOS/TOMADAS SEQUENCIAIS (sem pular ou agrupar etapas) utilizando a técnica de Last-Frame Continuity.
 Receita alvo: "${recipeNameOrIdea}"
 Formato de tela: ${aspectRatio}
 
@@ -255,12 +257,19 @@ Formato de tela: ${aspectRatio}
 - Iluminação: "${lightingAnchor}"
 - Estilo: "${styleAnchor}"
 
-UTENSÍLIOS DINÂMICOS & SEQUÊNCIA CULINÁRIA:
-- Passo 1: Preparo/corte na tábua de corte de madeira com faca de chef (prep_cutting / cutting_board).
-- Passo intermediário: Frigideira no fogão ou panela borbulhante ou liquidificador (saute_frying / pan_stove ou boil_simmer / pot_boiling).
-- Passos de finalização: Empratamento no prato de servir fundo/raso (plated_hero / serving_plate), Garfada com textura em close-up macro (tasting / tasting_fork) e Tomada final de encerramento com CTA viral para curtir e seguir (social_cta / social_hero).
+ESTRUTURA OBRIGATÓRIA DE ${targetSteps} TOMADAS ÁGEIS:
+- Se ${targetSteps} >= 7 ou 8 tomadas, decupe detalhadamente o passo a passo com micro-ações apetitosas:
+  1. Ingrediente principal na tigela ou corte inicial na tábua de madeira (prep_cutting / cutting_board)
+  2. Adição de temperos, ervas frescas ou aromáticos (preparo / bowl_prep)
+  3. Adição de líquidos, queijos ou farinhas e incorporação suave (bowl_prep)
+  4. Misturar/sovar ou levar ao fogo vivo/frigideira/air fryer (saute_frying ou appliance_enter)
+  5. Ponto de cozimento, borbulhamento ou douramento crocante com fumaça subindo (pan_stove ou appliance_exit)
+  6. Finalização e montagem no prato de cerâmica ou travessa (plated_hero / serving_plate)
+  7. Pegar com garfo ou pinça / Partir ao meio com queijo esticando (tasting / tasting_fork)
+  8. Tomada final de encerramento com CTA viral para curtir, salvar e seguir (social_cta / social_hero)
 
 MUITO IMPORTANTE:
+- O array "steps" no JSON retornado DEVE CONTER EXATAMENTE ${targetSteps} OBJETOS!
 - Os prompts em inglês de imagePrompt e videoPrompt devem ser objetivos, concisos e descritivos (2 a 3 frases cada), incorporando as âncoras fixas e o utensílio dinâmico de cada etapa.
 - Retorne estritamente o JSON preenchido conforme o esquema.`;
 

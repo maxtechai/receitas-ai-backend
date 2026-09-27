@@ -32,7 +32,12 @@ import {
   buildPromptWithFixedAnchors,
 } from '../services/agnesApi';
 import { stitchLongVideo } from '../utils/videoStitcher';
-import { pastaShrimpRecipeProject, escondidinhoAirfryerRecipeProject } from '../data/sampleRecipes';
+import {
+  pastaShrimpRecipeProject,
+  croquetesAirFryerRecipeProject,
+  paoQueijoAirFryerRecipeProject,
+  escondidinhoAirfryerRecipeProject,
+} from '../data/sampleRecipes';
 
 interface AutoPilotModalProps {
   isOpen: boolean;
@@ -55,6 +60,18 @@ interface LogMessage {
 }
 
 const PRESET_IDEAS = [
+  {
+    title: '🍗 Croquetes de Frango na Air Fryer (8 Passos Mestre / Last-Frame Perfeito)',
+    category: 'Reels & Shorts / Last-Frame Chain Ultra-Fluido',
+    utensilFlow: 'Frango na Tigela ➔ Queijo/Batata/Ervas ➔ Temperos ➔ Sovar Massa ➔ Modelar Bancada ➔ Air Fryer Entrada ➔ Saída Dourada ➔ Cheese Pull Macro',
+    demoProject: croquetesAirFryerRecipeProject,
+  },
+  {
+    title: '🧀 Pão de Queijo na Air Fryer (13s Viral / 7 Cenas SynthID)',
+    category: 'Shorts & Reels / Corte Acelerado SynthID',
+    utensilFlow: 'Ralar Queijo ➔ Creme Leite ➔ Polvilho ➔ Modelar Bolinha ➔ Air Fryer ➔ Pegar ➔ Cheese Pull Macro',
+    demoProject: paoQueijoAirFryerRecipeProject,
+  },
   {
     title: '🍝 Macarrão com Alho e Camarão Suculento',
     category: 'Massa / Frutos do Mar',
@@ -101,6 +118,8 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
   const [lightingAnchor, setLightingAnchor] = useState(
     recipe.fixedAnchors?.lightingAnchor || 'Iluminação suave difusa de janela matinal 5600K com reflexos quentes e vapor'
   );
+
+  const [targetStepCount, setTargetStepCount] = useState<number>(recipe.steps.length > 5 ? recipe.steps.length : 8);
 
   // Automation state
   const [phase, setPhase] = useState<AutoPilotPhase>('idle');
@@ -190,7 +209,7 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
       // FASE 1: ROTEIRIZAÇÃO INTELIGENTE
       // ==========================================
       setOverallProgress(8);
-      addLog('Fase 1: Gerando roteiro com 5 postos e regra de ouro do Last-Frame...', 'step');
+      addLog(`Fase 1: Gerando roteiro com ${targetStepCount} tomadas dinâmicas e regra de ouro do Last-Frame...`, 'step');
 
       // Check if user picked an existing preset or if we need to call Gemini/Agnes
       const matchingPreset = PRESET_IDEAS.find((p) => p.title.toLowerCase().includes(recipeIdea.toLowerCase()));
@@ -200,13 +219,13 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
           title: recipeIdea,
           fixedAnchors: workingProject.fixedAnchors,
         };
-        addLog(`✅ Roteiro carregado com 5 tomadas fluidas de alta gastronomia!`, 'success');
+        addLog(`✅ Roteiro carregado com ${workingProject.steps.length} tomadas fluidas de alta gastronomia!`, 'success');
       } else if (executionMode === 'real') {
         try {
           const aiProposal = await generateRecipeWorkflowWithAgnes(
             {
               recipeNameOrIdea: recipeIdea,
-              stepCount: 5,
+              stepCount: targetStepCount,
               aspectRatio: workingProject.aspectRatio,
               fixedAnchors: workingProject.fixedAnchors,
               handStyle: handAnchor,
@@ -220,21 +239,17 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
             let inferredType: RecipeStepType = st.stepType || 'preparation';
             let inferredStation: EquipmentStation = st.equipmentStation || 'bowl_prep';
 
-            if (idx === 0) {
-              inferredType = 'prep_cutting';
-              inferredStation = 'cutting_board';
-            } else if (idx === 1) {
-              inferredType = 'saute_frying';
-              inferredStation = 'pan_stove';
-            } else if (idx === 2) {
-              inferredType = 'saute_frying';
-              inferredStation = 'pan_stove';
-            } else if (idx === totalCount - 2) {
-              inferredType = 'plated_hero';
-              inferredStation = 'serving_plate';
-            } else if (idx === totalCount - 1) {
-              inferredType = 'social_cta';
-              inferredStation = 'social_hero';
+            if (!st.stepType) {
+              if (idx === 0) {
+                inferredType = 'prep_cutting';
+                inferredStation = 'cutting_board';
+              } else if (idx === totalCount - 2) {
+                inferredType = 'tasting';
+                inferredStation = 'tasting_fork';
+              } else if (idx === totalCount - 1) {
+                inferredType = 'social_cta';
+                inferredStation = 'social_hero';
+              }
             }
 
             return {
@@ -578,6 +593,35 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
                       className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-[11px] text-slate-300 hover:text-amber-300 transition-colors cursor-pointer"
                     >
                       {preset.title.split(' ')[0]} {preset.title.split(' ')[1]} {preset.title.split(' ')[2]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step Count Selector in AutoPilot */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Quantidade de Tomadas Dinâmicas:</span>
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { count: 5, label: '5 Passos (Reels Clássico)' },
+                    { count: 7, label: '7 Passos (Dinâmico)' },
+                    { count: 8, label: '8 Passos (Mestre ⭐ Ultra-Fluido)' },
+                    { count: 10, label: '10 Passos (Cortes Rápidos)' },
+                  ].map((item) => (
+                    <button
+                      key={item.count}
+                      type="button"
+                      onClick={() => setTargetStepCount(item.count)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                        targetStepCount === item.count
+                          ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold ring-1 ring-amber-300'
+                          : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
                     </button>
                   ))}
                 </div>
