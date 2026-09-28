@@ -608,6 +608,7 @@ export async function generateRecipeWorkflowWithAgnes(
     voiceoverText: string;
     sfx: 'sizzle' | 'chop' | 'stir' | 'pour' | 'timer_ding' | 'none';
     imagePrompt: string;
+    endImagePrompt?: string;
     videoPrompt: string;
     durationSeconds: number;
   }[];
@@ -725,9 +726,10 @@ REQUISITOS ESTRITOS DE FORMATO:
       "instruction": "Instrução técnica rápida",
       "voiceoverText": "Texto falado para locução envolvente e natural...",
       "sfx": "chop",
-      "imagePrompt": "Prompt em inglês conciso para agnes-image-2.0-flash com as âncoras fixas e o utensílio desta etapa em 9:16 8k...",
-      "videoPrompt": "Prompt em inglês conciso para agnes-video-v2.0 descrevendo movimentos das mãos e dinâmica dos alimentos...",
-      "durationSeconds": 5
+      "imagePrompt": "Prompt em inglês conciso para o início da cena (Start Frame 0s) para agnes-image-2.0-flash com as âncoras fixas em 9:16 8k...",
+      "endImagePrompt": "Prompt em inglês conciso para o frame final da cena (End Frame 3s-5s) onde a ação física deste passo termina nítida e pronta para a próxima tomada...",
+      "videoPrompt": "Prompt em inglês conciso para agnes-video-v2.0 descrevendo o movimento exato entre o início e o fim...",
+      "durationSeconds": 3
     }
   ]
 }`;
@@ -1011,6 +1013,7 @@ function normalizeRecipe(obj: any, fallbackTitle: string): any {
         voiceoverText,
         sfx,
         imagePrompt,
+        endImagePrompt: st.endImagePrompt || undefined,
         videoPrompt,
         durationSeconds,
       };

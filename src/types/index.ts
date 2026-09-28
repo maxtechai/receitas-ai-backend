@@ -37,6 +37,7 @@ export interface SceneShot {
   
   // Image generation state (agnes-image-2.0-flash)
   imageUrl?: string;
+  endImageUrl?: string;
   imageStatus: 'idle' | 'generating' | 'completed' | 'failed';
   imageError?: string;
 
@@ -44,6 +45,7 @@ export interface SceneShot {
   videoId?: string;
   videoTaskId?: string;
   videoUrl?: string;
+  keyframeMode?: 'start_only' | 'dual_keyframes';
   videoStatus: 'idle' | 'queued' | 'in_progress' | 'completed' | 'failed';
   videoProgress?: number; // 0 - 100
   videoError?: string;
@@ -123,13 +125,16 @@ export interface RecipeStep {
   usesLastFrame: boolean;
   referenceImageUrl?: string;
   imagePrompt: string;
+  endImagePrompt?: string; // Prompt do frame final exato para ancoragem dupla (First-Frame + End-Frame)
   videoPrompt: string;
   durationSeconds: number;
   numFrames: number;
   frameRate: number;
   imageUrl?: string;
+  endImageUrl?: string; // Imagem do frame final para interpolação confinada na Agnes AI
   lastFrameUrl?: string;
   videoUrl?: string;
+  keyframeMode?: 'start_only' | 'dual_keyframes'; // Modo de interpolação da Agnes AI
   status: 'idle' | 'image_generating' | 'video_generating' | 'completed' | 'failed';
   progress?: number;
   error?: string;

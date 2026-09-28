@@ -120,6 +120,7 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
   );
 
   const [targetStepCount, setTargetStepCount] = useState<number>(recipe.steps.length > 5 ? recipe.steps.length : 8);
+  const [useDualKeyframes, setUseDualKeyframes] = useState<boolean>(true);
 
   // Automation state
   const [phase, setPhase] = useState<AutoPilotPhase>('idle');
@@ -327,8 +328,8 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
           step.usesLastFrame = true;
         }
 
-        // Subtask 1: Gerar Imagem do Passo
-        setCurrentSubTask(`Tomada ${stepNum}: Gerando frame fotográfico com âncoras fixas...`);
+        // Subtask 1: Gerar Imagem do Passo (Start Frame)
+        setCurrentSubTask(`Tomada ${stepNum}: Gerando quadro inicial (Start Frame 0s)...`);
         step.status = 'image_generating';
         setAutoProject({ ...workingProject });
         onApplyRecipe({ ...workingProject });
@@ -337,40 +338,79 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
 
         if (executionMode === 'real') {
           try {
-            addLog(`📸 Gerando imagem via Agnes Image 2.0 Flash...`, 'info');
+            addLog(`📸 Gerando quadro inicial (0s) via Agnes Image 2.0 Flash...`, 'info');
             stepImage = await generateShotImage(
               step.imagePrompt,
               workingProject.aspectRatio,
               step.usesLastFrame ? step.referenceImageUrl : undefined,
               apiKey
             );
-            addLog(`✅ Imagem da Tomada ${stepNum} gerada com sucesso!`, 'success');
+            addLog(`✅ Quadro inicial (0s) da Tomada ${stepNum} gerado com sucesso!`, 'success');
           } catch (e: any) {
-            addLog(`⚠️ Erro na imagem da tomada ${stepNum}: ${e.message}. Mantendo fallback de demonstração.`, 'warning');
+            addLog(`⚠️ Erro na imagem inicial da tomada ${stepNum}: ${e.message}. Mantendo fallback.`, 'warning');
           }
         } else {
           // Fast demo simulation: brief 1.2s delay for visual feedback
-          await new Promise((r) => setTimeout(r, 1200));
-          addLog(`✅ Imagem da Tomada ${stepNum} pronta (Modo Rápido)!`, 'success');
+          await new Promise((r) => setTimeout(r, 1000));
+          addLog(`✅ Quadro inicial da Tomada ${stepNum} pronto (Modo Rápido)!`, 'success');
         }
 
         step.imageUrl = stepImage || step.referenceImageUrl;
+
+        // Subtask 1.5: Gerar Quadro Final (End Frame) para Interpolação Confinada
+        let stepEndImage = step.endImageUrl;
+        if (useDualKeyframes) {
+          setCurrentSubTask(`Tomada ${stepNum}: Gerando quadro final exato (End Frame)...`);
+          addLog(`🎯 Gerando quadro final de parada suave para ancoragem perfeita...`, 'info');
+
+          if (executionMode === 'real') {
+            try {
+              const targetEndPrompt =
+                step.endImagePrompt ||
+                `${step.imagePrompt}, motion gracefully concluded, hands and utensils resting, clear culinary presentation at final position, sharp focus, 8k`;
+              
+              stepEndImage = await generateShotImage(
+                targetEndPrompt,
+                workingProject.aspectRatio,
+                step.imageUrl,
+                apiKey
+              );
+              step.endImageUrl = stepEndImage;
+              addLog(`🔒 Quadro final gerado: animação será confinada entre início e fim!`, 'success');
+            } catch (endErr: any) {
+              addLog(`⚠️ Informação do quadro final: ${endErr.message}. Usando interpolação padrão.`, 'warning');
+            }
+          } else {
+            await new Promise((r) => setTimeout(r, 700));
+            step.endImageUrl = step.imageUrl;
+            addLog(`🔒 Modo Dual-Keyframe ativo: início e fim fixados!`, 'success');
+          }
+        }
+
         step.status = 'video_generating';
         setAutoProject({ ...workingProject });
         onApplyRecipe({ ...workingProject });
 
         // Subtask 2: Gerar Animação em Vídeo
-        setCurrentSubTask(`Tomada ${stepNum}: Animando dinâmica dos alimentos e mãos em vídeo...`);
+        setCurrentSubTask(`Tomada ${stepNum}: Animando dinâmica entre os dois quadros...`);
 
         let stepVideo = step.videoUrl;
 
         if (executionMode === 'real' && step.imageUrl) {
           try {
-            addLog(`🎬 Enviando tarefa para Agnes Video v2.0 (121 frames / 24fps)...`, 'info');
+            const hasDualKeys = Boolean(useDualKeyframes && step.endImageUrl && step.endImageUrl !== step.imageUrl);
+            addLog(
+              hasDualKeys
+                ? `🎬 Enviando tarefa para Agnes Video v2.0 no modo DUAL-KEYFRAMES (Início ➔ Fim)...`
+                : `🎬 Enviando tarefa para Agnes Video v2.0 (121 frames / 24fps)...`,
+              'info'
+            );
+
             const task = await createVideoTask(
               {
-                prompt: step.videoPrompt || 'Cinematic cooking action in smooth slow motion',
+                prompt: step.videoPrompt || 'Cinematic cooking action in smooth slow motion, resting gracefully at final frame',
                 imageUrl: step.imageUrl,
+                secondKeyframeUrl: hasDualKeys ? step.endImageUrl : undefined,
                 numFrames: step.numFrames || 121,
                 frameRate: step.frameRate || 24,
                 aspectRatio: workingProject.aspectRatio,
@@ -387,7 +427,7 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
               },
               apiKey
             );
-            addLog(`✅ Vídeo da Tomada ${stepNum} renderizado pela Agnes API!`, 'success');
+            addLog(`✅ Vídeo da Tomada ${stepNum} renderizado com interpolação fluida!`, 'success');
           } catch (e: any) {
             const isRateLimit =
               e.message?.includes('429') ||
@@ -417,21 +457,21 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
         step.progress = 100;
 
         // Subtask 3: Extração Automática do Último Frame via Canvas
-        setCurrentSubTask(`Tomada ${stepNum}: Extraindo automaticamente o Último Frame...`);
-        addLog(`🎯 Extraindo Último Frame da Tomada ${stepNum}...`, 'info');
+        setCurrentSubTask(`Tomada ${stepNum}: Confirmando frame final para a próxima tomada...`);
+        addLog(`🎯 Salvando frame final para encadear a próxima tomada sem cortes bruscos...`, 'info');
 
-        let extractedFrame: string | undefined = step.imageUrl;
+        let extractedFrame: string | undefined = step.endImageUrl || step.imageUrl;
         if (step.videoUrl) {
           try {
-            extractedFrame = await extractVideoLastFrame(step.videoUrl, step.imageUrl);
+            extractedFrame = await extractVideoLastFrame(step.videoUrl, step.endImageUrl || step.imageUrl);
           } catch (e) {
-            extractedFrame = step.imageUrl;
+            extractedFrame = step.endImageUrl || step.imageUrl;
           }
         }
         step.lastFrameUrl = extractedFrame;
         lastExtractedFrame = extractedFrame;
 
-        addLog(`🎯 Último Frame capturado e guardado na memória para encadeamento contínuo!`, 'success');
+        addLog(`🔗 Frame final cravado: a Tomada ${stepNum + 1 <= totalSteps ? stepNum + 1 : 'final'} começará com 100% de continuidade!`, 'success');
 
         setAutoProject({ ...workingProject });
         onApplyRecipe({ ...workingProject });
@@ -624,6 +664,40 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
                       {item.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Dual-Keyframe Interpolação Confinada Toggle */}
+              <div
+                onClick={() => setUseDualKeyframes(!useDualKeyframes)}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
+                  useDualKeyframes
+                    ? 'bg-gradient-to-r from-amber-950/40 to-orange-950/30 border-amber-500/70 shadow-sm'
+                    : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 p-1.5 rounded-lg ${useDualKeyframes ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400'}`}>
+                    <Sliders className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white">Encadeamento por Quadros-Chave Duplos (Início ➔ Fim)</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        ⭐ Fluidez Máxima
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                      Gera antecipadamente o <strong>Quadro Inicial (0s)</strong> e o <strong>Quadro Final (3s)</strong> com parada suave. A Agnes Video é guiada entre os dois quadros e o frame final se conecta 100% à próxima tomada sem cortes bruscos.
+                    </p>
+                  </div>
+                </div>
+                <div className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${useDualKeyframes ? 'bg-amber-500' : 'bg-slate-800'}`}>
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform shadow ${
+                      useDualKeyframes ? 'translate-x-5' : 'translate-x-0.5'
+                    }`}
+                  />
                 </div>
               </div>
 

@@ -1,13 +1,15 @@
 import React from 'react';
-import { Film, Clapperboard, Sparkles, Key, Play, Download, Plus, LayoutGrid, Utensils } from 'lucide-react';
+import { Film, Clapperboard, Sparkles, Key, Play, Download, Plus, LayoutGrid, Utensils, Mic } from 'lucide-react';
 
 interface HeaderProps {
   activeTab: 'shots' | 'recipe' | 'storyboard' | 'player' | 'exporter';
   setActiveTab: (tab: 'shots' | 'recipe' | 'storyboard' | 'player' | 'exporter') => void;
   onOpenKeyModal: () => void;
+  onOpenElevenLabsModal?: () => void;
   onOpenScriptModal: () => void;
   onAddShot: () => void;
   hasApiKey: boolean;
+  hasElevenLabsKey?: boolean;
   totalDurationSeconds: number;
 }
 
@@ -15,9 +17,11 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   onOpenKeyModal,
+  onOpenElevenLabsModal,
   onOpenScriptModal,
   onAddShot,
   hasApiKey,
+  hasElevenLabsKey = false,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800 bg-[#090d16]/95 backdrop-blur-md px-3 sm:px-6 py-2.5">
@@ -105,6 +109,24 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Actions */}
         <div className="flex items-center gap-1.5">
+          {/* ElevenLabs Modal Trigger */}
+          {onOpenElevenLabsModal && (
+            <button
+              onClick={onOpenElevenLabsModal}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                hasElevenLabsKey
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
+                  : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-600'
+              }`}
+              title="Configurar ElevenLabs (Vozes Ultra-Realistas com fallback automático)"
+            >
+              <Mic className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">
+                {hasElevenLabsKey ? 'ElevenLabs Conectada' : 'ElevenLabs'}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={onOpenKeyModal}
             className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${

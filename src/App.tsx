@@ -11,6 +11,7 @@ import { ContinuousPlayer } from './components/ContinuousPlayer';
 import { ExporterView } from './components/ExporterView';
 import { RecipeStudioView } from './components/RecipeStudioView';
 import { ApiKeyModal } from './components/ApiKeyModal';
+import { ElevenLabsModal } from './components/ElevenLabsModal';
 import { ScriptGeneratorModal } from './components/ScriptGeneratorModal';
 import { FilmProject, SceneShot, RecipeProject } from './types';
 import { initialProject } from './data/sampleProjects';
@@ -36,6 +37,8 @@ import {
 const STORAGE_KEY_PROJECT = 'agnes_cineforge_project_v1';
 const STORAGE_KEY_RECIPE = 'agnes_cineforge_recipe_v2';
 const STORAGE_KEY_API = 'agnes_api_key';
+const STORAGE_KEY_ELEVENLABS = 'elevenlabs_api_key';
+const STORAGE_KEY_ELEVEN_VOICE = 'elevenlabs_voice_id';
 
 export default function App() {
   const [project, setProject] = useState<FilmProject>(() => {
@@ -61,6 +64,16 @@ export default function App() {
   const [apiKey, setApiKey] = useState<string>(() => {
     return localStorage.getItem(STORAGE_KEY_API) || '';
   });
+
+  const [elevenLabsKey, setElevenLabsKey] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEY_ELEVENLABS) || '';
+  });
+
+  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEY_ELEVEN_VOICE) || '21m00Tcm4TlvDq8ikWAM';
+  });
+
+  const [isElevenLabsModalOpen, setIsElevenLabsModalOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'shots' | 'recipe' | 'storyboard' | 'player' | 'exporter'>(() => {
     try {
@@ -113,6 +126,20 @@ export default function App() {
     setApiKey(key);
     localStorage.setItem(STORAGE_KEY_API, key);
     showBanner('Agnes API Key salva com sucesso!', 'success');
+  };
+
+  const handleSaveElevenLabsKey = (key: string, voiceId?: string) => {
+    setElevenLabsKey(key);
+    localStorage.setItem(STORAGE_KEY_ELEVENLABS, key);
+    if (voiceId) {
+      setElevenLabsVoiceId(voiceId);
+      localStorage.setItem(STORAGE_KEY_ELEVEN_VOICE, voiceId);
+    }
+    if (key.trim()) {
+      showBanner('ElevenLabs conectada com sucesso! Vozes hiper-realistas ativadas com fallback suave.', 'success');
+    } else {
+      showBanner('Chave ElevenLabs removida. Sistema operando em modo Gemini TTS / navegador.', 'info');
+    }
   };
 
   const handleResetToDemo = () => {
@@ -450,9 +477,11 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenKeyModal={() => setIsKeyModalOpen(true)}
+        onOpenElevenLabsModal={() => setIsElevenLabsModalOpen(true)}
         onOpenScriptModal={() => setIsScriptModalOpen(true)}
         onAddShot={handleAddShot}
         hasApiKey={Boolean(apiKey)}
+        hasElevenLabsKey={Boolean(elevenLabsKey)}
         totalDurationSeconds={totalDuration}
       />
 
@@ -624,6 +653,7 @@ export default function App() {
             onUpdateRecipe={setRecipeProject}
             apiKey={apiKey}
             onOpenKeyModal={() => setIsKeyModalOpen(true)}
+            onOpenElevenLabsModal={() => setIsElevenLabsModalOpen(true)}
             showToast={showBanner}
             onNavigateToPlayer={() => setActiveTab('player')}
           />
@@ -736,6 +766,14 @@ export default function App() {
         onClose={() => setIsKeyModalOpen(false)}
         apiKey={apiKey}
         onSaveKey={handleSaveApiKey}
+      />
+
+      <ElevenLabsModal
+        isOpen={isElevenLabsModalOpen}
+        onClose={() => setIsElevenLabsModalOpen(false)}
+        apiKey={elevenLabsKey}
+        selectedVoiceId={elevenLabsVoiceId}
+        onSaveKey={handleSaveElevenLabsKey}
       />
 
       <ScriptGeneratorModal

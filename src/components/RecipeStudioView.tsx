@@ -34,6 +34,7 @@ import {
   Share2,
   Heart,
   Bookmark,
+  Sliders,
 } from 'lucide-react';
 import {
   RecipeProject,
@@ -67,6 +68,7 @@ interface RecipeStudioViewProps {
   onUpdateRecipe: React.Dispatch<React.SetStateAction<RecipeProject>>;
   apiKey: string;
   onOpenKeyModal: () => void;
+  onOpenElevenLabsModal?: () => void;
   showToast: (msg: string, type?: 'success' | 'info' | 'error') => void;
   onNavigateToPlayer?: () => void;
 }
@@ -284,6 +286,7 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
   onUpdateRecipe,
   apiKey,
   onOpenKeyModal,
+  onOpenElevenLabsModal,
   showToast,
   onNavigateToPlayer,
 }) => {
@@ -298,8 +301,8 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
   const [cascadeStepIdx, setCascadeStepIdx] = useState<number | null>(null);
   const [cascadeStatusText, setCascadeStatusText] = useState('');
 
-  // Media view modes per step ('image' | 'video' | 'last_frame')
-  const [stepViewModes, setStepViewModes] = useState<Record<string, 'image' | 'video' | 'last_frame'>>({});
+  // Media view modes per step ('image' | 'video' | 'last_frame' | 'end_image')
+  const [stepViewModes, setStepViewModes] = useState<Record<string, 'image' | 'video' | 'last_frame' | 'end_image'>>({});
 
   // Recently updated step for pulse highlight
   const [highlightedStepId, setHighlightedStepId] = useState<string | null>(null);
@@ -318,7 +321,7 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
   const [exportedUrl, setExportedUrl] = useState<string | null>(null);
 
   // Helper to determine active preview tab for a step
-  const getStepViewMode = (step: RecipeStep): 'image' | 'video' | 'last_frame' => {
+  const getStepViewMode = (step: RecipeStep): 'image' | 'video' | 'last_frame' | 'end_image' => {
     if (stepViewModes[step.id]) return stepViewModes[step.id];
     // Default to image if image exists or if no video yet
     if (step.videoUrl) return 'video';
@@ -812,6 +815,7 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
         {
           prompt: step.videoPrompt || 'Cinematic cooking action in slow motion',
           imageUrl: baseImg,
+          secondKeyframeUrl: step.endImageUrl && step.endImageUrl !== baseImg ? step.endImageUrl : undefined,
           numFrames: step.numFrames,
           frameRate: step.frameRate,
           aspectRatio: recipe.aspectRatio,
@@ -1397,6 +1401,18 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
               <MessageSquare className="w-3.5 h-3.5" />
               <span>Chef IA (Novas Receitas)</span>
             </button>
+
+            {onOpenElevenLabsModal && (
+              <button
+                type="button"
+                onClick={onOpenElevenLabsModal}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900 border border-amber-500/40 text-amber-300 hover:bg-slate-800 transition-all cursor-pointer shadow-sm"
+                title="Configurar ElevenLabs (Vozes Ultra-Realistas com fallback automático)"
+              >
+                <Mic className="w-3.5 h-3.5 text-amber-400" />
+                <span>Vozes ElevenLabs</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -2050,6 +2066,21 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                               <span>Último Frame</span>
                             </button>
                           )}
+
+                          {step.endImageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setStepViewModes((prev) => ({ ...prev, [step.id]: 'end_image' }))}
+                              className={`px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                                currentMode === 'end_image'
+                                  ? 'bg-orange-500 text-slate-950 font-bold shadow-sm'
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              <Sliders className="w-3 h-3" />
+                              <span>Quadro Final (Guia)</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* Custom Image Upload */}
@@ -2084,6 +2115,21 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                             <div className="absolute top-2 left-2 pointer-events-none">
                               <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-950/80 border border-purple-700/60 text-purple-300 font-semibold shadow">
                                 🎬 Clipe de Vídeo (Agnes Video V2.0)
+                              </span>
+                            </div>
+                          </div>
+                        ) : currentMode === 'end_image' && step.endImageUrl ? (
+                          /* 2.5 End Frame Mode */
+                          <div className="relative w-full h-full">
+                            <img
+                              src={step.endImageUrl}
+                              alt="Quadro Final de Parada Suave"
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute top-2 left-2">
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-orange-950/90 border border-orange-700/60 text-orange-300 font-semibold shadow">
+                                🎯 Quadro Final (Guia de Interpolação Confinada)
                               </span>
                             </div>
                           </div>
@@ -2273,7 +2319,7 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                           <div className="flex items-center justify-between mb-1">
                             <label className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
                               <Camera className="w-3 h-3 text-cyan-400" />
-                              <span>Prompt de Imagem (Agnes Image 2.0 Flash)</span>
+                              <span>Prompt de Imagem Inicial (0s - Start Frame)</span>
                             </label>
                             <span className="text-[10px] text-slate-500 font-mono">
                               {recipe.aspectRatio}
@@ -2284,6 +2330,26 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                             value={step.imagePrompt}
                             onChange={(e) => handleUpdateStep({ ...step, imagePrompt: e.target.value })}
                             className="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700/80 rounded-xl text-slate-200 focus:outline-none focus:border-amber-500 font-mono resize-none leading-relaxed"
+                          />
+                        </div>
+
+                        {/* End Frame Prompt (Dual-Keyframe Interpolation) */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-medium text-amber-300 flex items-center gap-1">
+                              <Sliders className="w-3 h-3 text-amber-400" />
+                              <span>Quadro Final Exato (End Frame / Parada Suave)</span>
+                            </label>
+                            <span className="text-[10px] text-amber-400/80 font-mono font-bold">
+                              Dual-Keyframe 🎯
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={step.endImagePrompt || ''}
+                            onChange={(e) => handleUpdateStep({ ...step, endImagePrompt: e.target.value })}
+                            placeholder="Ex: Ingredients fully mixed at rest in the bowl, hands lifting away gently, sharp focus 8k..."
+                            className="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700/80 rounded-xl text-slate-200 focus:outline-none focus:border-amber-500 font-mono"
                           />
                         </div>
 
@@ -2309,24 +2375,55 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <button
                           type="button"
                           onClick={() => handleGenerateStepImage(step.id)}
                           disabled={generatingImages[step.id]}
-                          className="py-2.5 px-3 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                          className="py-2.5 px-2.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                         >
                           {generatingImages[step.id] ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Gerando Frame...</span>
+                              <span>Gerando...</span>
                             </>
                           ) : (
                             <>
                               <Camera className="w-3.5 h-3.5" />
-                              <span>{step.imageUrl ? 'Recriar Imagem do Passo' : '1. Gerar Imagem do Passo'}</span>
+                              <span>{step.imageUrl ? '1. Recriar Início' : '1. Quadro Início (0s)'}</span>
                             </>
                           )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!apiKey) {
+                              onOpenKeyModal();
+                              showToast('Configure sua Agnes API Key.', 'error');
+                              return;
+                            }
+                            const prompt =
+                              step.endImagePrompt ||
+                              `${step.imagePrompt}, motion smoothly completed at rest, hands and food in final position, crisp focus 8k`;
+                            setGeneratingImages((prev) => ({ ...prev, [step.id]: true }));
+                            try {
+                              const endImg = await generateShotImage(prompt, recipe.aspectRatio, step.imageUrl, apiKey);
+                              handleUpdateStep({ ...step, endImageUrl: endImg, lastFrameUrl: endImg });
+                              setStepViewModes((prev) => ({ ...prev, [step.id]: 'end_image' }));
+                              showToast(`Quadro final (End Frame) do Passo ${step.stepNumber} gerado com sucesso!`, 'success');
+                            } catch (e: any) {
+                              showToast(`Erro no quadro final: ${e.message}`, 'error');
+                            } finally {
+                              setGeneratingImages((prev) => ({ ...prev, [step.id]: false }));
+                            }
+                          }}
+                          disabled={generatingImages[step.id] || !step.imageUrl}
+                          className="py-2.5 px-2.5 text-xs font-semibold rounded-xl bg-orange-950/40 hover:bg-orange-900/60 border border-orange-700/60 text-orange-200 transition-colors flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-40"
+                          title="Gera a imagem de parada suave (3s) para confinar a animação entre o início e o fim"
+                        >
+                          <Sliders className="w-3.5 h-3.5 text-orange-400" />
+                          <span>{step.endImageUrl ? '2. Recriar Fim' : '2. Quadro Fim (3s)'}</span>
                         </button>
 
                         <button
@@ -2338,12 +2435,12 @@ export const RecipeStudioView: React.FC<RecipeStudioViewProps> = ({
                           {generatingVideos[step.id] ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Animando Vídeo...</span>
+                              <span>Animando...</span>
                             </>
                           ) : (
                             <>
                               <Play className="w-3.5 h-3.5 fill-slate-950" />
-                              <span>{step.videoUrl ? 'Reanimar Ação em Vídeo' : '2. Animar Ação Culinária'}</span>
+                              <span>{step.videoUrl ? 'Reanimar Vídeo' : '3. Animar Vídeo'}</span>
                             </>
                           )}
                         </button>

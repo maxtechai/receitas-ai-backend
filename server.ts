@@ -270,7 +270,9 @@ ESTRUTURA OBRIGATÓRIA DE ${targetSteps} TOMADAS ÁGEIS:
 
 MUITO IMPORTANTE:
 - O array "steps" no JSON retornado DEVE CONTER EXATAMENTE ${targetSteps} OBJETOS!
-- Os prompts em inglês de imagePrompt e videoPrompt devem ser objetivos, concisos e descritivos (2 a 3 frases cada), incorporando as âncoras fixas e o utensílio dinâmico de cada etapa.
+- Os prompts em inglês de imagePrompt (Frame Inicial / 0s) e endImagePrompt (Frame Final / 3s-5s) devem ser objetivos e concisos.
+- O endImagePrompt descreve como a tomada deve terminar com precisão milimétrica para que a Agnes Video V2.0 interpole o movimento entre os dois quadros estáticos e o frame final se torne o primeiro frame da cena seguinte sem nenhum corte brusco.
+- O videoPrompt deve descrever o movimento contínuo da ação culinária fluindo do início ao fim com parada suave.
 - Retorne estritamente o JSON preenchido conforme o esquema.`;
 
         const geminiResponse = await ai.models.generateContent({
@@ -314,6 +316,7 @@ MUITO IMPORTANTE:
                       voiceoverText: { type: Type.STRING },
                       sfx: { type: Type.STRING },
                       imagePrompt: { type: Type.STRING },
+                      endImagePrompt: { type: Type.STRING },
                       videoPrompt: { type: Type.STRING },
                       durationSeconds: { type: Type.INTEGER },
                     },
@@ -481,6 +484,9 @@ app.post('/api/agnes/videos', async (req, res) => {
       model = 'agnes-video-v2.0',
       prompt,
       image,
+      first_frame_image,
+      last_frame_image,
+      secondKeyframeUrl,
       mode,
       height = 768,
       width = 1152,
@@ -500,10 +506,27 @@ app.post('/api/agnes/videos', async (req, res) => {
       frame_rate,
     };
 
-    if (image) {
+    // Dual keyframe interpolation support (First-Frame + End-Frame)
+    const startImg = first_frame_image || (Array.isArray(image) ? image[0] : image);
+    const endImg = last_frame_image || secondKeyframeUrl || (Array.isArray(image) && image.length > 1 ? image[1] : undefined);
+
+    if (startImg && endImg) {
+      requestPayload.image = [startImg, endImg];
+      requestPayload.mode = 'keyframes';
+      requestPayload.extra_body = {
+        ...(extra_body || {}),
+        image: [startImg, endImg],
+        mode: 'keyframes',
+        first_frame_image: startImg,
+        last_frame_image: endImg,
+      };
+    } else if (image) {
       requestPayload.image = image;
+    } else if (startImg) {
+      requestPayload.image = startImg;
     }
-    if (mode) {
+
+    if (mode && !requestPayload.mode) {
       requestPayload.mode = mode;
     }
     if (seed !== undefined && seed !== null) {
@@ -999,13 +1022,21 @@ Passo 5: Garfada macro irresistível + CTA social`,
         step.imageUrl = demoAssets[i % demoAssets.length];
       }
 
-      // Step Video Generation
+      // Step Video Generation with Dual Keyframes (Start ➔ End)
       step.status = 'generating_video';
-      job.message = `Animando tomada ${i + 1}/${job.totalSteps} em vídeo 9:16...`;
+      job.message = `Animando tomada ${i + 1}/${job.totalSteps} com interpolação de quadros-chave duplos...`;
       job.updatedAt = new Date().toISOString();
 
       if (hasValidKey && step.imageUrl?.startsWith('http')) {
         try {
+          const videoPayload: any = {
+            model: 'agnes-video-v2.0',
+            prompt: step.videoPrompt || 'Cinematic culinary motion flowing smoothly to final resting pose',
+            image_url: step.imageUrl,
+            aspect_ratio: job.aspectRatio,
+            duration: 3,
+          };
+
           const videoRes = await safeUpstreamFetch(
             `${AGNES_BASE_URL}/videos`,
             {
@@ -1014,13 +1045,7 @@ Passo 5: Garfada macro irresistível + CTA social`,
                 Authorization: `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                model: 'agnes-video-v2.0',
-                prompt: step.videoPrompt,
-                image_url: step.imageUrl,
-                aspect_ratio: job.aspectRatio,
-                duration: 5,
-              }),
+              body: JSON.stringify(videoPayload),
             },
             'Agnes Video'
           );
@@ -1186,19 +1211,201 @@ app.get('/api/recipes/pipeline/jobs', (_req, res) => {
   return res.json({ jobs: list.slice(0, 20) });
 });
 
-// 7. Gemini High-Fidelity Text-to-Speech (TTS) for Voiceover Narration
+// ==========================================
+// ELEVENLABS PROXY & SYNTHESIS ENDPOINTS
+// ==========================================
+function getElevenLabsApiKey(req: express.Request): string | null {
+  const customHeader = req.headers['x-elevenlabs-key'] as string;
+  if (customHeader && customHeader.trim()) {
+    return customHeader.trim();
+  }
+  return process.env.ELEVENLABS_API_KEY || null;
+}
+
+// Check ElevenLabs user account status & remaining quota
+app.get('/api/elevenlabs/user', async (req, res) => {
+  try {
+    const apiKey = getElevenLabsApiKey(req);
+    if (!apiKey) {
+      return res.status(400).json({ error: 'Nenhuma chave da ElevenLabs fornecida.' });
+    }
+
+    const response = await fetch('https://api.elevenlabs.io/v1/user', {
+      headers: {
+        'xi-api-key': apiKey,
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({
+        error: `Falha na verificação da ElevenLabs: ${errText || response.statusText}`,
+      });
+    }
+
+    const data = await response.json();
+    const sub = data.subscription || {};
+    return res.json({
+      tier: sub.tier || 'free',
+      character_count: sub.character_count || 0,
+      character_limit: sub.character_limit || 10000,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Erro ao consultar ElevenLabs' });
+  }
+});
+
+// List ElevenLabs voices
+app.get('/api/elevenlabs/voices', async (req, res) => {
+  try {
+    const apiKey = getElevenLabsApiKey(req);
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['xi-api-key'] = apiKey;
+    }
+
+    const response = await fetch('https://api.elevenlabs.io/v1/voices', { headers });
+    if (!response.ok) {
+      // Return curated standard voices as fallback
+      return res.json({
+        voices: [
+          { voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', category: 'premade', labels: { accent: 'Natural Gastronômica' } },
+          { voice_id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', category: 'premade', labels: { accent: 'Confiante' } },
+          { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella', category: 'premade', labels: { accent: 'Expressiva' } },
+          { voice_id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', category: 'premade', labels: { accent: 'Narrativa' } },
+        ],
+      });
+    }
+
+    const data = await response.json();
+    return res.json({ voices: data.voices || [] });
+  } catch (error: any) {
+    return res.json({
+      voices: [
+        { voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', category: 'premade' },
+        { voice_id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', category: 'premade' },
+      ],
+    });
+  }
+});
+
+// Synthesize speech via ElevenLabs with audio buffer return
+app.post('/api/elevenlabs/tts', async (req, res) => {
+  try {
+    const { text, voiceId = '21m00Tcm4TlvDq8ikWAM' } = req.body;
+    const apiKey = getElevenLabsApiKey(req);
+
+    if (!apiKey) {
+      return res.status(400).json({ error: 'Chave da ElevenLabs não configurada' });
+    }
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Texto para locução é obrigatório' });
+    }
+
+    const cleanText = text.trim();
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+      {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.8,
+            style: 0.2,
+            use_speaker_boost: true,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({
+        error: `Erro ElevenLabs: ${errText || response.statusText}`,
+      });
+    }
+
+    const arrayBuf = await response.arrayBuffer();
+    const base64Audio = Buffer.from(arrayBuf).toString('base64');
+
+    return res.json({
+      audio: base64Audio,
+      mimeType: 'audio/mp3',
+      provider: 'elevenlabs',
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Falha na sintetização ElevenLabs' });
+  }
+});
+
+// 7. Unified High-Fidelity Text-to-Speech (TTS) for Voiceover Narration:
+// Priority: 1. ElevenLabs (if key provided) -> 2. Gemini 3.8 Flash TTS -> 3. Local browser Web Speech API
 app.post('/api/tts', async (req, res) => {
   try {
-    const { text, voice = 'Kore' } = req.body;
+    const { text, voice = 'Kore', voiceId } = req.body;
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'Texto para locução é obrigatório.' });
     }
 
     const cleanText = text.trim();
+    const elevenKey = getElevenLabsApiKey(req);
+
+    // ==========================================
+    // 1. ELEVENLABS ATTEMPT (SE CHAVE ESTIVER DISPONÍVEL)
+    // ==========================================
+    if (elevenKey) {
+      try {
+        const vId = voiceId || '21m00Tcm4TlvDq8ikWAM';
+        const elevenRes = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${vId}?output_format=mp3_44100_128`,
+          {
+            method: 'POST',
+            headers: {
+              'xi-api-key': elevenKey,
+              'Content-Type': 'application/json',
+              Accept: 'audio/mpeg',
+            },
+            body: JSON.stringify({
+              text: cleanText,
+              model_id: 'eleven_multilingual_v2',
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.8,
+              },
+            }),
+          }
+        );
+
+        if (elevenRes.ok) {
+          const arrayBuf = await elevenRes.arrayBuffer();
+          const base64Audio = Buffer.from(arrayBuf).toString('base64');
+          return res.json({
+            available: true,
+            audio: base64Audio,
+            mimeType: 'audio/mp3',
+            provider: 'elevenlabs',
+          });
+        }
+        // Se a cota da ElevenLabs acabar (401, 429), prossegue suavemente para o fallback do Gemini!
+      } catch (e) {
+        console.warn('ElevenLabs falhou, utilizando fallback automático Gemini TTS:', e);
+      }
+    }
+
+    // ==========================================
+    // 2. FALLBACK PARA GEMINI 3.8 FLASH TTS
+    // ==========================================
     const voiceName = voice || 'Kore';
     const cacheKey = `${voiceName}:${cleanText}`;
 
-    // 1. Serve from in-memory cache if already generated
+    // Serve from in-memory cache if already generated
     const cached = ttsCache.get(cacheKey);
     if (cached) {
       return res.json({
@@ -1207,6 +1414,7 @@ app.post('/api/tts', async (req, res) => {
         audio: cached.audio,
         mimeType: cached.mimeType,
         sampleRate: cached.sampleRate,
+        provider: 'gemini',
       });
     }
 

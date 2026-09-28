@@ -370,8 +370,8 @@ export const paoQueijoAirFryerRecipeProject: RecipeProject = {
     {
       id: 'pq_step_02',
       stepNumber: 2,
-      stepType: 'mixing_bowl',
-      equipmentStation: 'mixing_bowl',
+      stepType: 'preparation',
+      equipmentStation: 'bowl_prep',
       utensil: 'Caixinha de creme de leite sobre a mesma tigela de vidro',
       continuityRule: 'Last-Frame da Cena 1: usa o queijo já ralado dentro da tigela de vidro',
       continuityNote: 'Cena 2 (00:01 - 00:02): Despejar creme de leite sobre o queijo',
@@ -394,8 +394,8 @@ export const paoQueijoAirFryerRecipeProject: RecipeProject = {
     {
       id: 'pq_step_03',
       stepNumber: 3,
-      stepType: 'mixing_bowl',
-      equipmentStation: 'mixing_bowl',
+      stepType: 'preparation',
+      equipmentStation: 'bowl_prep',
       utensil: 'Xícara de polvilho doce na mesma tigela de vidro',
       continuityRule: 'Last-Frame da Cena 2: a mistura com creme de leite recebe o polvilho doce',
       continuityNote: 'Cena 3 (00:02 - 00:03): Adicionar polvilho doce à mistura',
@@ -418,8 +418,8 @@ export const paoQueijoAirFryerRecipeProject: RecipeProject = {
     {
       id: 'pq_step_04',
       stepNumber: 4,
-      stepType: 'mixing_bowl',
-      equipmentStation: 'mixing_bowl',
+      stepType: 'preparation',
+      equipmentStation: 'bowl_prep',
       utensil: 'Mãos sovando na tigela e boleando na bancada',
       continuityRule: 'Transformação física: a mistura vira uma massa lisa e forma a bolinha redonda',
       continuityNote: 'Cena 4 (00:04 - 00:06): Misturar e modelar a bolinha de pão de queijo',
@@ -442,7 +442,7 @@ export const paoQueijoAirFryerRecipeProject: RecipeProject = {
     {
       id: 'pq_step_05',
       stepNumber: 5,
-      stepType: 'cook_appliance',
+      stepType: 'appliance_enter',
       equipmentStation: 'oven_appliance',
       utensil: 'Air Fryer preta com cesto deslizante',
       continuityRule: 'Transição da bancada para a Air Fryer com os pães assando',
@@ -466,7 +466,7 @@ export const paoQueijoAirFryerRecipeProject: RecipeProject = {
     {
       id: 'pq_step_06',
       stepNumber: 6,
-      stepType: 'plating',
+      stepType: 'appliance_exit',
       equipmentStation: 'oven_appliance',
       utensil: 'Cesto da Air Fryer e mão retirando o pão quente',
       continuityRule: 'Last-Frame da Cena 5: pega um pão de queijo do cesto recém-aberto',
@@ -677,7 +677,7 @@ export const croquetesAirFryerRecipeProject: RecipeProject = {
     {
       id: 'croq_step_06',
       stepNumber: 6,
-      stepType: 'cook_appliance',
+      stepType: 'appliance_enter',
       equipmentStation: 'oven_appliance',
       utensil: 'Air Fryer digital preta com cesto deslizante',
       continuityRule: 'Entrada no Aparelho: os croquetes modelados são acomodados no cesto e o timer digital é ativado',
@@ -701,7 +701,7 @@ export const croquetesAirFryerRecipeProject: RecipeProject = {
     {
       id: 'croq_step_07',
       stepNumber: 7,
-      stepType: 'plating',
+      stepType: 'appliance_exit',
       equipmentStation: 'oven_appliance',
       utensil: 'Cesto da Air Fryer e pinça de inox',
       continuityRule: 'Saída do Aparelho (Fumaça + Crocância): abertura do cesto com os croquetes já dourados e borbulhantes',

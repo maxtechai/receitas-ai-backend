@@ -2,6 +2,43 @@
 import { CulinarySfx } from '../types';
 
 /**
+ * Decodes base64 audio into an AudioBuffer (supports raw PCM16 and MP3/WAV container formats)
+ */
+export async function decodeBase64ToAudioBuffer(
+  ctx: AudioContext,
+  base64: string,
+  mimeType: string = 'audio/pcm',
+  sampleRate: number = 24000,
+): Promise<AudioBuffer> {
+  const binary = atob(base64);
+  const len = binary.length;
+  const buffer = new ArrayBuffer(len);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < len; i++) {
+    view[i] = binary.charCodeAt(i);
+  }
+
+  // If MP3, AAC or WAV, use the browser's native decodeAudioData
+  if (mimeType.includes('mp3') || mimeType.includes('mpeg') || mimeType.includes('wav')) {
+    try {
+      return await ctx.decodeAudioData(buffer.slice(0));
+    } catch (e) {
+      console.warn('Native decodeAudioData error, attempting raw fallback:', e);
+    }
+  }
+
+  // Linear PCM 16-bit 24kHz fallback
+  const int16View = new Int16Array(buffer);
+  const numSamples = int16View.length;
+  const audioBuffer = ctx.createBuffer(1, numSamples, sampleRate);
+  const channelData = audioBuffer.getChannelData(0);
+  for (let i = 0; i < numSamples; i++) {
+    channelData[i] = int16View[i] / 32768.0;
+  }
+  return audioBuffer;
+}
+
+/**
  * Decodes 16-bit linear PCM base64 audio (e.g. from Gemini TTS 24kHz) into an AudioBuffer
  */
 export function pcm16ToAudioBuffer(
@@ -32,15 +69,20 @@ let ttsCooldownUntil = 0;
 
 /**
  * Fetches high-fidelity Portuguese speech narration from server /api/tts
+ * Automatically utilizes ElevenLabs if key exists, falling back seamlessly to Gemini TTS and SpeechSynthesis.
  */
 export async function fetchVoiceoverAudioBuffer(
   ctx: AudioContext,
   text: string,
   voice: string = 'Kore',
+  customVoiceId?: string,
 ): Promise<AudioBuffer | null> {
   if (!text || !text.trim()) return null;
   const cleanText = text.trim();
-  const cacheKey = `${voice}:${cleanText}`;
+  const elevenKey = typeof window !== 'undefined' ? localStorage.getItem('elevenlabs_api_key') || '' : '';
+  const storedVoiceId = typeof window !== 'undefined' ? localStorage.getItem('elevenlabs_voice_id') || '' : '';
+  const activeVoiceId = customVoiceId || storedVoiceId || '21m00Tcm4TlvDq8ikWAM';
+  const cacheKey = `${elevenKey ? '11labs:' + activeVoiceId : voice}:${cleanText}`;
 
   // 1. Instant return from client cache
   if (clientVoiceoverCache.has(cacheKey)) {
@@ -53,10 +95,19 @@ export async function fetchVoiceoverAudioBuffer(
   }
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (elevenKey) {
+      headers['x-elevenlabs-key'] = elevenKey;
+    }
+
     const res = await fetch('/api/tts', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: cleanText, voice }),
+      headers,
+      body: JSON.stringify({
+        text: cleanText,
+        voice,
+        voiceId: activeVoiceId,
+      }),
     });
 
     if (!res.ok) return null;
@@ -75,7 +126,12 @@ export async function fetchVoiceoverAudioBuffer(
     }
 
     if (data && data.audio) {
-      const buffer = pcm16ToAudioBuffer(ctx, data.audio, data.sampleRate || 24000);
+      const buffer = await decodeBase64ToAudioBuffer(
+        ctx,
+        data.audio,
+        data.mimeType || 'audio/pcm',
+        data.sampleRate || 24000,
+      );
       if (clientVoiceoverCache.size > 80) {
         const first = clientVoiceoverCache.keys().next().value;
         if (first) clientVoiceoverCache.delete(first);
@@ -467,9 +523,10 @@ class CinematicAudioEngine {
   }
 
   /**
-   * Text-to-Speech (TTS) Narrator in Portuguese
+   * Text-to-Speech (TTS) Narrator with ElevenLabs / Gemini TTS high-fidelity playback
+   * and fallback to local browser SpeechSynthesis
    */
-  public speak(text: string, onEnd?: () => void) {
+  public async speak(text: string, onEnd?: () => void) {
     if (!text || !text.trim()) {
       onEnd?.();
       return;
@@ -480,7 +537,31 @@ class CinematicAudioEngine {
       return;
     }
 
-    // Try SpeechSynthesis for instant local browser voice
+    try {
+      this.initContext();
+      if (this.ctx) {
+        // 1. Attempt High-Fidelity ElevenLabs or Gemini buffer first
+        const buffer = await fetchVoiceoverAudioBuffer(this.ctx, text);
+        if (buffer) {
+          const source = this.ctx.createBufferSource();
+          source.buffer = buffer;
+          const voiceGain = this.ctx.createGain();
+          voiceGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+          source.connect(voiceGain);
+          voiceGain.connect(this.ctx.destination);
+
+          source.onended = () => {
+            onEnd?.();
+          };
+          source.start();
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('High fidelity speech playback error, falling back to browser synthesis:', e);
+    }
+
+    // 2. Fallback to SpeechSynthesis for instant local browser voice
     if ('speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
@@ -527,7 +608,7 @@ class CinematicAudioEngine {
     if (voiceoverText) {
       setTimeout(() => {
         this.speak(voiceoverText);
-      }, 300);
+      }, 350);
     }
   }
 }
